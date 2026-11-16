@@ -15,13 +15,13 @@ void main() {
   vec4 sub = texture(uSub, vUv);
   float cavn = smoothstep(0.42, 0.68, sub.g);
   float B = 0.0;
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < 40; i++) {
     vec2 c = 0.5 + (hash22(vec2(float(i) * 3.7 + uSeed, uSeed * 1.9)) - 0.5) * uSimScale * 0.92;
-    float r = 0.008 + 0.022 * hash12(vec2(float(i), uSeed + 4.0));
-    float d = length(vUv - c) + 0.012 * (fbm(vUv * 40.0 + uSeed) - 0.5);
+    float r = 0.010 + 0.040 * hash12(vec2(float(i), uSeed + 4.0));
+    float d = length(vUv - c) + 0.030 * (fbm(vUv * 22.0 + uSeed) - 0.5);
     B = max(B, fall(r * 0.3, r, d));
   }
-  B *= 0.32 * smoothstep(0.3, 0.6, cavn + 0.4 * sub.b) * uSeedMoss;
+  B *= 0.32 * smoothstep(0.3, 0.6, cavn + 0.4 * sub.b) * smoothstep(0.2, 0.45, sub.b) * uSeedMoss;
   float W = 0.10 + 0.30 * cavn + 0.15 * sub.a;
   fragColor = vec4(B, W, B > 0.01 ? 0.35 : 0.0, 1.0);
 }`;
@@ -41,7 +41,7 @@ uniform float uRain;
 uniform vec2 uBrushA;
 uniform vec2 uBrushB;
 uniform float uBrushR;
-uniform float uBrushMode;   // 0 none, 1 sow, 2 mist, 3 dry, 4 scrape
+uniform float uBrushMode;   // 0 none, 1 sow, 2 mist, 3 dry, 4 scrape, 5 clear (under a placed object)
 ${NOISE}
 ${WORLD}
 
@@ -85,7 +85,7 @@ void main() {
     vec4 n = texture(uState, vUv + o * uTexel);
     float hn = texture(uSub, vUv + o * uTexel).r;
     sumB += wg * n.r; wsum += wg; maxB = max(maxB, n.r);
-    float dl = (hn + n.g * 0.06) - myLevel;
+    float dl = clamp((hn + n.g * 0.06) - myLevel, -0.02, 0.02);   // capped so cliffs stay stable
     if (dl > 0.0) inflow += wg * dl * n.g * (1.0 - 0.8 * smoothstep(0.0, 0.6, n.r));
     else outflow += wg * (-dl) * W * myHold;
     lapW += wg * (n.g - W);
@@ -99,16 +99,16 @@ void main() {
 
   // ---- water ----
   float Bs = smoothstep(0.0, 0.6, B);
-  W += uDt * (FLOW * (inflow - min(outflow, W * 0.15)) + DIFF * lapW / wsum);
-  float dew = DEW * uHumidity * uHumidity * (0.3 + 0.7 * cavn) * (0.5 + damp);
-  float evap = EVAP * (0.3 + 0.7 * sun) * (1.0 - 0.6 * cavn) * (1.0 - 0.7 * Bs) * (1.3 - uHumidity);
+  W += uDt * (FLOW * (inflow - outflow) + DIFF * lapW / wsum);
+  float dew = DEW * uHumidity * uHumidity * (0.3 + 0.7 * cavn) * (0.5 + min(damp, 1.2));
+  float evap = EVAP * (0.3 + 0.7 * sun) * (1.0 - 0.6 * cavn) * (1.0 - 0.7 * Bs) * (1.3 - uHumidity) * (1.25 - 0.75 * min(damp, 1.2));
   W += uDt * (dew * (1.0 - W) - evap * W);
   W += uRain * 0.02 * (0.5 + r1);
 
   // ---- habitat ----
   float moist = smoothstep(0.10, 0.42, W);
   float lightF = 0.35 + 0.65 * smoothstep(0.0, 0.35, uLight);
-  float S = moist * (1.0 - 0.6 * sun * (1.0 - moist)) * (0.55 + 0.45 * por) * lightF;
+  float S = moist * (1.0 - 0.6 * sun * (1.0 - moist)) * clamp(por * 1.3, 0.0, 1.0) * lightF;
   float K = clamp(0.22 + 0.45 * cavn + 0.38 * moist, 0.15, 1.0);
 
   // ---- hydration: fast to rehydrate, slow to dry out (poikilohydry) ----
@@ -146,12 +146,15 @@ void main() {
     } else if (uBrushMode < 3.5) {     // warm, dry light
       W -= 0.10 * f * W;
       Hy -= 0.03 * f * Hy;
-    } else {                           // scrape
+    } else if (uBrushMode < 4.5) {     // scrape
       B -= 0.12 * f * (0.5 + r2);
       W -= 0.02 * f * W;
+    } else {
+      B *= 1.0 - fall(uBrushR * 0.85, uBrushR, d);
     }
   }
 
+  if (damp > 1.5) { W = 1.0; B = 0.0; }                    // open water: a spring for its surroundings
   if (B < 0.006) { B = 0.0; M = 0.0; }
   fragColor = vec4(clamp(B, 0.0, 1.0), clamp(W, 0.0, 1.0), clamp(M, 0.0, 1.0), clamp(Hy, 0.0, 1.0));
 }`;
