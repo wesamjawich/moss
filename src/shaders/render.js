@@ -289,17 +289,20 @@ void main() {
   rock = mix(rock, bark, mw.g);
   rock = mix(rock, carved, mw.b);
   float hard = clamp(mw.r + mw.b + mw.g, 0.0, 1.0);
-  // Foliose lichens: rosettes that widen year by year on bare stone and bark.
+  // Lichens: irregular lobed crusts that widen year by year on bare stone and bark.
   {
-    vec3 lv = voro(sp2 * 24.0);
+    vec3 lv = voro(sp2 * 21.0 + 0.35 * vec2(fbm3(sp2 * 30.0), fbm3(sp2 * 30.0 + 7.0)));
     float pick = fract(lv.z * 7.7);
-    float lr = 0.03 + 0.43 * smoothstep(0.0, 1.0, uAge * (0.012 + 0.03 * fract(lv.z * 3.1)));
-    float ragged = lv.x + 0.06 * (g2 - 0.5);
-    float ros = fall(lr - 0.05, lr, ragged) * step(0.42, pick) * hard * (1.0 - smoothstep(0.55, 0.75, cav));
-    vec3 lc = mix(vec3(0.50, 0.56, 0.47), vec3(0.58, 0.70, 0.60), smoothstep(0.42, 0.75, pick));
-    lc = mix(lc, vec3(0.78, 0.50, 0.08), step(0.90, pick));                       // a few orange ones
-    lc *= (0.72 + 0.28 * cos(lv.x * 70.0)) * (0.75 + 0.5 * g2) * mix(0.75, 1.1, smoothstep(lr - 0.12, lr, lv.x));
-    rock = mix(rock, lc, ros * 0.85);
+    float lr = 0.02 + 0.24 * smoothstep(0.0, 1.0, uAge * (0.012 + 0.03 * fract(lv.z * 3.1)));   // stays well inside its cell, so no straight edges
+    float lobes = fbm3(sp2 * 95.0 + lv.z * 20.0);                    // ragged, lobed margin
+    float ragged = lv.x + 0.20 * (lobes - 0.5) + 0.10 * (fbm3(sp2 * 260.0) - 0.5);
+    float body = fall(lr - 0.06, lr, ragged) * smoothstep(0.25, 0.55, fbm3(sp2 * 160.0 + 3.0) + 0.2) * step(0.50, pick) * hard * (1.0 - smoothstep(0.55, 0.75, cav));
+    vec3 lc = mix(vec3(0.34, 0.40, 0.31), vec3(0.44, 0.52, 0.42), smoothstep(0.50, 0.85, pick));
+    lc = mix(lc, vec3(0.66, 0.46, 0.12), step(0.93, pick));                        // the odd ochre one
+    float mottle = fbm3(sp2 * 160.0 + 3.0);
+    lc *= 0.70 + 0.55 * mottle;
+    lc *= mix(0.80, 1.12, smoothstep(lr - 0.10, lr - 0.01, ragged));               // paler, slightly raised margin
+    rock = mix(rock, lc, body * 0.70);
   }
   rock *= mix(1.0, 0.42, smoothstep(0.50, 0.85, cav) * mix(0.55, 1.0, hard));     // grime gathers in hollows
   rock *= mix(0.80, 1.12, smoothstep(0.30, 0.50, cav) * (1.0 - smoothstep(0.5, 0.7, cav)));
