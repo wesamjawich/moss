@@ -11,6 +11,7 @@ uniform sampler2D uTex1;     // rock, wood, carved, water
 uniform sampler2D uGround;   // A = fallen leaves
 uniform vec2 uRes;
 uniform vec2 uSimScale;
+uniform vec3 uView;          // camera: centre x, y and zoom (1 = the whole garden)
 uniform vec2 uStateSize;
 uniform float uTime;
 uniform float uLight;
@@ -162,8 +163,8 @@ vec4 leafLayer(vec2 p, float freq, float salt, vec2 shadowOff, out float shadow)
 }
 
 void main() {
-  vec2 p = (vUv - 0.5) * uSimScale + 0.5;
-  float px = uSimScale.x / uRes.x;
+  vec2 p = (vUv - 0.5) * uSimScale / uView.z + uView.xy;
+  float px = uSimScale.x / uView.z / uRes.x;
   float e = max(px, 0.00050);
   gFq = clamp(0.42 / (px * 1100.0), 0.35, 1.0);
   vec3 SUNV = normalize(uSun);

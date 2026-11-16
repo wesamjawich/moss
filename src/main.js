@@ -144,7 +144,7 @@ function start() {
   const viewMat = mat(RENDER_FRAG, {
     uState: { value: null }, uSub: { value: subRT.texture }, uTex0: { value: heightRT.textures[0] }, uTex1: { value: heightRT.textures[1] },
     uGround: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
-    uSimScale: { value: simScale }, uStateSize: { value: new THREE.Vector2(SIM, SIM) },
+    uSimScale: { value: simScale }, uView: { value: new THREE.Vector3(0.5, 0.5, 1) }, uStateSize: { value: new THREE.Vector2(SIM, SIM) },
     uTime: { value: 0 }, uLight: { value: 0.5 }, uRain: { value: 0 }, uWet: { value: 0 },
     uSun: { value: new THREE.Vector3(...MOODS.day.sun) }, uSunCol: { value: new THREE.Vector3(...MOODS.day.sunCol) },
     uSkyCol: { value: new THREE.Vector3(...MOODS.day.sky) }, uMist: { value: 0 }, uNight: { value: 0 }, uLamps: { value: lamps },
@@ -703,7 +703,7 @@ function start() {
   resize();
   setGroup('moss');
   setMood('day', true);
-  window.__moss = { step, world, brush, flags, newGarden, addObject, setMood, setGroup, groundStroke, save, select, advance, toScreen };
+  window.__moss = { step, world, brush, flags, newGarden, addObject, setMood, setGroup, groundStroke, save, select, advance, toScreen, view: viewMat.uniforms.uView.value };
   const begin = (restored) => {
     if (!restored) {
       // ?seed=N makes the first garden repeatable.

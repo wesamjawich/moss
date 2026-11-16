@@ -9,30 +9,36 @@ const path = require('path');
 const FPS = 24, W = 390, H = 844, DPR = 2;      // an iPhone-shaped portrait frame, 780 x 1688
 const dir = process.argv[2];
 const probe = process.argv.includes('--probe');
-const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=3&sim=512&sub=1024&ground=1024';
+const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=3&sim=768&sub=2048&ground=1024';
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[error]', m.text().slice(0, 500)); });
-  await page.goto(url);
+  await page.goto(url, { timeout: 600000 });
   await page.waitForFunction(() => window.__moss && window.__moss.advance);
   await page.waitForTimeout(1500);
 
   let n = 0;
   const t0 = Date.now();
   // Advance the garden by `count` video frames, with `steps` extra simulation steps in each (time-lapse).
-  const F = async (count = 1, steps = 0) => {
+  let cam = { x: 0.5, y: 0.5, z: 1 };
+  const ease = (u) => u * u * (3 - 2 * u);
+  const F = async (count = 1, steps = 0, to = null) => {
+    const from = { ...cam };
     if (process.env.DRY) { n += count; return; }      // DRY=1 checks the script's clicks without rendering
     for (let i = 0; i < count; i++) {
-      await page.evaluate(([dt, s]) => { const m = window.__moss; for (let k = 0; k < s; k++) m.step(1); m.advance(dt); }, [1 / FPS, steps]);
+      if (to) {      // glide the camera towards `to` over these frames
+        const u = ease((i + 1) / count);
+        cam = { x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u, z: from.z * Math.pow(to.z / from.z, u) };
+      }
+      await page.evaluate(([dt, s, c]) => { const m = window.__moss; m.view.set(c.x, c.y, c.z); for (let k = 0; k < s; k++) m.step(1); m.advance(dt); }, [1 / FPS, steps, cam]);
       await page.screenshot({ path: path.join(dir, String(n++).padStart(5, '0') + '.jpg'), type: 'jpeg', quality: 93, timeout: 120000 });
     }
     if (process.env.LIMIT && n >= +process.env.LIMIT) { await browser.close(); process.exit(0); }
     if (n % 24 < count) console.log(`frame ${n}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   };
-  const ease = (u) => u * u * (3 - 2 * u);
   const tool = (label) => page.click(`#tools button:has-text("${label}")`);
   const tab = (label) => page.click(`#tabs button:has-text("${label}")`);
   const setRange = (id, v) => page.evaluate(([i, val]) => { const el = document.getElementById(i); el.value = val; el.dispatchEvent(new Event('input')); }, [id, v]);
@@ -67,61 +73,47 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surpri
 
   if (probe) { await F(4); await F(2, 20); console.log('probe ms/frame', (Date.now() - t0) / 6); await browser.close(); return; }
 
-  // ---- a ready-made garden with young moss ----
-  const park = async () => { await page.mouse.move(195, 600); await page.evaluate(() => { document.getElementById('ring').hidden = true; }); };
-  await park();
-  await F(20);
+  const bare = (v) => page.evaluate((b) => { document.body.classList.toggle('bare', b); document.getElementById('ring').hidden = true; document.getElementById('hint').hidden = true; document.getElementById('show').hidden = true; }, v);
+  const park = async () => { await page.mouse.move(195, 640); await page.evaluate(() => { document.getElementById('ring').hidden = true; }); };
 
-  // ---- sow moss and mist it ----
-  await setRange('size', 0.05);
-  await stroke(line(40, 110, 300, 150, 15, 1), 12);
-  await stroke(line(300, 250, 130, 330, 12, 1), 10);
-  await stroke(line(40, 420, 110, 470), 6);
-  await tool('Mist');
-  await stroke(line(40, 160, 340, 330, 40, 1.5), 16);
-  await park();
-  await F(6);
-
-  // ---- years pass: the moss spreads ----
+  // ---- macro: young moss creeping over the soil in dappled light ----
+  await bare(true);
+  await setRange('light', 0.62);
   await setRange('humidity', 0.86);
-  for (let i = 0; i < 230; i++) await F(1, Math.round(5 + 30 * ease(Math.min(1, i / 70))));
-  await F(8);
+  await page.evaluate(() => { const m = window.__moss; for (let k = 0; k < 6; k++) m.step(0, 1, 0.36, 0.80, 0.56, 0.90, 0.07); });
+  cam = { x: 0.43, y: 0.83, z: 3.4 };
+  await F(120, 3, { x: 0.47, y: 0.81, z: 3.0 });
+
+  // ---- pull back as the years pass and the garden fills in ----
+  await F(170, 16, { x: 0.5, y: 0.5, z: 1 });
+  await F(40, 22);
 
   // ---- rain ----
-  await tool('Rain');
-  await F(78, 4);
-  await tool('Rain');
-  await F(34, 4);
+  await page.evaluate(() => { window.__moss.world.rainLeft = 3.4; });
+  await F(120, 4, { x: 0.5, y: 0.47, z: 1.12 });
 
-  // ---- scrape a path and a clearing ----
+  // ---- the gardener's hand: scrape a path, set stones along it ----
+  await F(16, 2, { x: 0.5, y: 0.5, z: 1 });
+  await bare(false);
   await tool('Scrape');
   await setRange('size', 0.035);
-  await stroke(line(35, 100, 270, 210, 14, 1), 30);
-  await stroke((u) => [190 + 24 * Math.cos(u * 12.6), 320 + 20 * Math.sin(u * 12.6)], 22);
-  await park();
-  await F(5);
-
-  // ---- set a rock in the clearing and stepping stones along the path ----
+  await stroke(line(35, 100, 270, 210, 14, 1), 26);
+  await stroke((u) => [190 + 24 * Math.cos(u * 12.6), 320 + 20 * Math.sin(u * 12.6)], 18);
   await tab('Objects');
-  await place('Rock', 190, 320, { wheel: 1 });
-  await place('Flat stone', 75, 116, { frames: 9 });
-  await place('Flat stone', 150, 152, { frames: 9 });
-  await place('Flat stone', 226, 190, { frames: 9 });
+  await place('Rock', 190, 320, { wheel: 1, frames: 9 });
+  await place('Flat stone', 75, 116, { frames: 7 });
+  await place('Flat stone', 150, 152, { frames: 7 });
+  await place('Flat stone', 226, 190, { frames: 7 });
   await page.keyboard.press('Escape');
-  await tab('Moss');
   await park();
-  await F(6);
+  await bare(true);
 
-  // ---- more years: moss closes in around the new stones ----
-  for (let i = 0; i < 130; i++) await F(1, Math.round(6 + 24 * ease(Math.min(1, i / 30))));
+  // ---- push in while moss closes around the new stones ----
+  await F(150, 14, { x: 0.45, y: 0.80, z: 2.1 });
 
-  // ---- evening light, then the garden on its own ----
-  await tab('Scene');
-  await page.click('#moods button[data-mood="dusk"]');
-  await F(40, 2);
-  await page.keyboard.press('h');
-  await page.evaluate(() => { document.getElementById('ring').hidden = true; });
-  await F(84, 2);
+  // ---- evening ----
+  await page.evaluate(() => window.__moss.setMood('dusk'));
+  await F(96, 3, { x: 0.5, y: 0.56, z: 1.25 });
 
   console.log('frames', n, 'seconds', ((Date.now() - t0) / 1000).toFixed(0));
   await browser.close();
