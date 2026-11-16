@@ -29,6 +29,7 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=bare&s
       await page.evaluate(([dt, s]) => { const m = window.__moss; for (let k = 0; k < s; k++) m.step(1); m.advance(dt); }, [1 / FPS, steps]);
       await page.screenshot({ path: path.join(dir, String(n++).padStart(5, '0') + '.jpg'), type: 'jpeg', quality: 93, timeout: 120000 });
     }
+    if (process.env.LIMIT && n >= +process.env.LIMIT) { await browser.close(); process.exit(0); }
     if (n % 24 < count) console.log(`frame ${n}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   };
   const ease = (u) => u * u * (3 - 2 * u);
@@ -74,9 +75,9 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=bare&s
   // ---- lay a gravel shore ----
   await tab('Ground');
   await setRange('size', 0.09);
-  await stroke(line(-20, 455, 1300, 430, 22, 1.5), 20);
-  await stroke(line(1300, 560, -20, 575, 12, 1), 16);
-  await stroke(line(-20, 680, 1300, 680), 12);
+  await stroke(line(6, 455, 1274, 430, 22, 1.5), 20);
+  await stroke(line(1274, 560, 6, 575, 12, 1), 16);
+  await stroke(line(6, 690, 1274, 690), 12);
   await F(4);
 
   // ---- rake it ----
