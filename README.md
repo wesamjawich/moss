@@ -4,6 +4,8 @@ Design a small Japanese moss garden seen from above, then watch the moss take it
 Place rocks, branches, a lantern, a water basin, a Jizō statue; lay gravel and rake it;
 scatter maple leaves; choose the hour of the day; save a picture to share.
 
+A 40-second walkthrough is in [`demo/koke-demo.mp4`](demo/koke-demo.mp4); `scripts/record-demo.cjs` re-records it.
+
 ```
 npm install
 npm run dev      # develop
