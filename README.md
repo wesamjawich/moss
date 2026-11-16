@@ -23,7 +23,12 @@ npm run build    # one self-contained dist/index.html
 
 Top right: sound (wind, rain, water drips), hide the controls, save a picture.
 Keys: `1`–`5` tools, `R` rain, `H` hide controls, `P` picture, `[` `]` brush size,
-wheel to resize the brush or the selected object (shift-wheel turns it), `Delete` removes it.
+wheel or pinch to zoom (two fingers or middle-drag to pan, `0` resets), alt-wheel for brush size,
+wheel over a selected object to resize it (shift-wheel turns it), `Delete` removes it.
+
+Moss sorts itself into four species by habitat (star, cushion, feather, liverwort); lichen rosettes spread over
+bare stone and bark as the garden ages; mushrooms come up on logs and mature moss after rain. With
+"Let nature run" on, showers arrive on their own and the light moves through the day.
 
 The garden is kept in the browser's local storage and restored on the next visit.
 Add `?fresh` to the address to start over. Slow GPU? Lower the grids with `?sim=512&sub=1024`.

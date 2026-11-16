@@ -16,6 +16,8 @@ uniform vec2 uStateSize;
 uniform float uTime;
 uniform float uLight;
 uniform float uRain;
+uniform float uAge;         // garden age in years: lichens spread with it
+uniform float uShroom;      // 0..1, how far the mushrooms have come up since the last rain
 uniform float uWet;         // lingering wetness after rain, 0..1
 uniform vec3 uSun;           // direction towards the sun or moon
 uniform vec3 uSunCol;
@@ -68,20 +70,45 @@ vec3 tuft(vec2 p, float star) {
 float gFq = 1.0;
 
 // Globals describing the moss at the last evaluated point.
-float gCov, gDome, gId, gSp, gClump, gDist;
+float gCov, gDome, gId, gSp, gClump, gDist, gSpI;
+// Habitat at the shaded point; decides which species grows there.
+float gSoil = 1.0, gHard = 0.0, gWood = 0.0, gWetHab = 0.0;
 
+// Four species sort themselves by habitat and by broad patches of chance:
+//   0 star moss (sugigoke): upright rosettes, likes open soil
+//   1 cushion moss (yamagoke): pale, fine, pillowy
+//   2 feather moss (haigoke): flat golden fronds creeping over rock and wood
+//   3 liverwort: glossy dark lobes in the wettest hollows
 float mossH(vec2 p, float B) {
-  gSp = smoothstep(0.40, 0.60, vnoise(p * 5.3 + 11.0) + 0.25 * (vnoise(p * 23.0) - 0.5));
-  vec3 t1 = tuft(p * 210.0, 1.0);    // coarse star moss (sugigoke-like)
-  vec3 t2 = tuft(p * 460.0, 0.0);    // fine velvet cushion moss
-  gDome = mix(t2.x, t1.x, gSp);
-  gId = mix(t2.y, t1.y, step(0.5, gSp));
-  gDist = mix(t2.z, t1.z, step(0.5, gSp));
+  float n1 = vnoise(p * 5.3 + 11.0) + 0.25 * (vnoise(p * 23.0) - 0.5);
+  float n2 = vnoise(p * 3.7 + 47.0) + 0.20 * (vnoise(p * 19.0 + 9.0) - 0.5);
+  float wStar = n1 + 0.22 * gSoil - 0.05;
+  float wCush = (1.0 - n1) + 0.10 * gWood;
+  float wFeather = n2 + 0.42 * (gHard + gWood) - 0.22;
+  float wLiver = 1.25 * gWetHab + 0.30 * n2 - 0.72;
+  gSpI = 0.0; float best = wStar;
+  if (wCush > best) { best = wCush; gSpI = 1.0; }
+  if (wFeather > best) { best = wFeather; gSpI = 2.0; }
+  if (wLiver > best) { best = wLiver; gSpI = 3.0; }
+  gSp = gSpI < 0.5 ? 1.0 : 0.0;
+  float amp;
+  if (gSpI < 0.5) { vec3 t = tuft(p * 210.0, 1.0); gDome = t.x; gId = t.y; gDist = t.z; amp = 0.0024; }
+  else if (gSpI < 1.5) { vec3 t = tuft(p * 460.0, 0.0); gDome = t.x; gId = t.y; gDist = t.z; amp = 0.0011; }
+  else if (gSpI < 2.5) {
+    float a = 6.2831 * vnoise(p * 4.0 + 3.0);                      // fronds lie along a wandering direction
+    vec2 q = vec2(cos(a) * p.x + sin(a) * p.y, -sin(a) * p.x + cos(a) * p.y);
+    float fr = fbm3(vec2(q.x * 70.0, q.y * 420.0));
+    gDome = 0.25 + 0.75 * fr; gId = vnoise(p * 260.0); gDist = 1.0; amp = 0.0013;
+  } else {
+    vec3 t = tuft(p * 115.0, 0.0);
+    gDome = 0.35 + 0.5 * smoothstep(0.05, 0.45, t.x); gId = t.y; gDist = 1.0; amp = 0.0010;
+  }
   gClump = fbm3(p * 34.0);
   float edge = B + (gDome - 0.45) * 0.10 + (gClump - 0.5) * 0.10;
   gCov = smoothstep(0.035, 0.10, edge) * smoothstep(0.004, 0.03, B);   // no moss where none has grown
-  float thick = B * (0.45 + 1.1 * gClump);
-  return gCov * (thick * MS + gDome * mix(0.0011, 0.0024, gSp) * (0.45 + 0.55 * smoothstep(0.04, 0.4, B)));
+  float pillow = gSpI > 0.5 && gSpI < 1.5 ? 1.35 : (gSpI > 1.5 ? 0.55 : 1.0);
+  float thick = B * (0.45 + 1.1 * gClump) * pillow;
+  return gCov * (thick * MS + gDome * amp * (0.45 + 0.55 * smoothstep(0.04, 0.4, B)));
 }
 
 // Fine relief of the bare material: grit on stone, pebbles in gravel, fibres on wood.
@@ -183,11 +210,12 @@ void main() {
   float soil = (1.0 - gravel) * (1.0 - obj);
 
   // ---- surface height and normal ----
+  gSoil = soil; gHard = mw.r + mw.b; gWood = mw.g; gWetHab = cavn * smoothstep(0.30, 0.70, W);
   float hx = texture(uSub, p + vec2(e, 0.0)).r * RS + micro(p + vec2(e, 0.0), gravel, mw.g, ang) + mossH(p + vec2(e, 0.0), Bx);
   float hy = texture(uSub, p + vec2(0.0, e)).r * RS + micro(p + vec2(0.0, e), gravel, mw.g, ang) + mossH(p + vec2(0.0, e), By);
   float hm = mossH(p, B);
   float h0 = sub.r * RS + micro(p, gravel, mw.g, ang) + hm;
-  float cov = gCov * (1.0 - mw.a), dome = gDome, id = gId, sp = gSp, clump = gClump;
+  float cov = gCov * (1.0 - mw.a), dome = gDome, id = gId, sp = gSp, clump = gClump, spi = gSpI;
   vec3 N = normalize(vec3(-(hx - h0) / e, -(hy - h0) / e, 1.0));
   vec3 V = vec3(0.0, 0.0, 1.0);
   vec3 Hv = normalize(SUNV + V);
@@ -261,6 +289,18 @@ void main() {
   rock = mix(rock, bark, mw.g);
   rock = mix(rock, carved, mw.b);
   float hard = clamp(mw.r + mw.b + mw.g, 0.0, 1.0);
+  // Foliose lichens: rosettes that widen year by year on bare stone and bark.
+  {
+    vec3 lv = voro(sp2 * 24.0);
+    float pick = fract(lv.z * 7.7);
+    float lr = 0.03 + 0.43 * smoothstep(0.0, 1.0, uAge * (0.012 + 0.03 * fract(lv.z * 3.1)));
+    float ragged = lv.x + 0.06 * (g2 - 0.5);
+    float ros = fall(lr - 0.05, lr, ragged) * step(0.42, pick) * hard * (1.0 - smoothstep(0.55, 0.75, cav));
+    vec3 lc = mix(vec3(0.50, 0.56, 0.47), vec3(0.58, 0.70, 0.60), smoothstep(0.42, 0.75, pick));
+    lc = mix(lc, vec3(0.78, 0.50, 0.08), step(0.90, pick));                       // a few orange ones
+    lc *= (0.72 + 0.28 * cos(lv.x * 70.0)) * (0.75 + 0.5 * g2) * mix(0.75, 1.1, smoothstep(lr - 0.12, lr, lv.x));
+    rock = mix(rock, lc, ros * 0.85);
+  }
   rock *= mix(1.0, 0.42, smoothstep(0.50, 0.85, cav) * mix(0.55, 1.0, hard));     // grime gathers in hollows
   rock *= mix(0.80, 1.12, smoothstep(0.30, 0.50, cav) * (1.0 - smoothstep(0.5, 0.7, cav)));
   // green algal / protonemal film where moss is just arriving
@@ -283,6 +323,10 @@ void main() {
   vec3 mc = mix(young, mature, smoothstep(0.03, 0.55, M) * (1.0 - 0.35 * thin));
   mc = mix(mc, old, smoothstep(0.62, 1.0, M) * 0.75);
   mc *= mix(vec3(0.82, 1.0, 0.98), vec3(1.22, 1.10, 0.70), sp);       // two species
+  float isCush = step(0.5, spi) * step(spi, 1.5), isFeather = step(1.5, spi) * step(spi, 2.5), isLiver = step(2.5, spi);
+  mc = mix(mc, mix(mc, vec3(0.34, 0.56, 0.33), 0.42), isCush);           // silvery cushion moss
+  mc = mix(mc, mc * vec3(1.45, 1.12, 0.42) + vec3(0.03, 0.02, 0.0), isFeather);  // golden feather moss
+  mc = mix(mc, vec3(0.035, 0.20, 0.060) * (0.8 + 0.5 * dome), isLiver);          // dark liverwort
   mc *= 0.72 + 0.56 * id;
   mc.r += (hash12(vec2(id * 91.0, 3.0)) - 0.5) * 0.05;
   mc = mix(dry * (0.65 + 0.6 * id), mc, smoothstep(0.15, 0.85, Hy));
@@ -358,7 +402,7 @@ void main() {
   colM += skyCol * wetM * (0.02 + 0.16 * rim) * (0.5 + 1.5 * skyGap) * aoM;       // drenched shoots glisten
   float tw = 0.55 + 0.45 * sin(uTime * (1.5 + 3.0 * id) + id * 80.0);
   colM += bead * wetM * (sunCol * sunI * 1.6 * tw + skyCol * 0.35);
-  colM += pow(max(dot(N, Hv), 0.0), 40.0) * wetM * 0.25 * sunCol * sunI;
+  colM += pow(max(dot(N, Hv), 0.0), 40.0) * (wetM * 0.25 + isLiver * 0.9) * sunCol * sunI + isLiver * skyCol * 0.10 * (0.5 + skyGap);
 
   vec3 col = mix(colR, colM, cov);
 
@@ -373,6 +417,43 @@ void main() {
     water += sunCol * sh * mask * pow(max(dot(wN, Hv), 0.0), 220.0) * 2.5;
     water += lamp * 0.25;
     col = mix(col, water, mw.a);
+  }
+
+  // ---- mushrooms: they come up on logs and mature moss after rain ----
+  if (uShroom > 0.01) {
+    vec2 mp = p * 46.0;
+    vec2 mi = floor(mp), mf = fract(mp);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 cell = mi + g;
+      float h1 = hash12(cell + 71.0);
+      vec2 c = g + 0.2 + 0.6 * hash22(cell + 5.0);
+      vec2 cp = (cell + 0.2 + 0.6 * hash22(cell + 5.0)) / 46.0;
+      if (h1 > 0.20 * smoothstep(0.45, 0.70, vnoise(cp * 11.0 + 3.0))) continue;   // sparse troops
+      vec4 cs = texture(uState, cp);
+      vec4 cm = texture(uTex1, cp);
+      float hab = max(step(0.5, cm.g), step(0.30, cs.r) * step(0.45, cs.b)) * (1.0 - step(0.5, cm.a + cm.b));
+      float grow = clamp(uShroom * 1.7 - 0.7 * hash12(cell + 9.0), 0.0, 1.0) * hab;
+      if (grow < 0.02) continue;
+      float R = (0.13 + 0.20 * hash12(cell + 2.0)) * grow;
+      vec2 d = mf - c;
+      float dist = length(d);
+      float sd = length(d + normalize(SUNV.xy) * R * 0.7);
+      col *= 1.0 - 0.5 * (1.0 - smoothstep(R * 0.7, R * 1.25, sd)) * step(R, dist);
+      float cap = 1.0 - smoothstep(R - 0.035, R, dist);
+      if (cap > 0.0) {
+        float hue = hash12(cell + 33.0);
+        vec3 cc = mix(vec3(0.50, 0.33, 0.17), vec3(0.74, 0.66, 0.48), smoothstep(0.0, 0.45, hue));
+        cc = mix(cc, vec3(0.86, 0.38, 0.06), smoothstep(0.55, 0.70, hue));
+        cc = mix(cc, vec3(0.70, 0.07, 0.04), step(0.86, hue));
+        if (hue > 0.86) cc = mix(cc, vec3(0.95, 0.92, 0.85), step(0.72, vnoise(mp * 9.0 + hue * 40.0)) * fall(0.5, 1.0, dist / R));
+        cc *= (0.70 + 0.30 * smoothstep(0.0, 0.5, dist / R)) * (1.0 - 0.40 * smoothstep(0.65, 1.0, dist / R));   // darker crown, shaded rim
+        vec3 cn = normalize(vec3(d / R * 0.9, 0.8));
+        float cd = pow(clamp((dot(cn, SUNV) + 0.4) / 1.4, 0.0, 1.0), 1.3);
+        vec3 lit = cc * (skyCol * (0.7 + 0.7 * cn.z + 0.5 * dot(cn.xy, vec2(-0.316, 0.949))) + sunCol * sunI * cd * 1.2 + lamp) + sunCol * sunI * pow(max(dot(cn, Hv), 0.0), 50.0) * 0.25;
+        col = mix(col, lit, cap);
+      }
+    }
   }
 
   // ---- fallen maple leaves ----

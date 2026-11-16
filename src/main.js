@@ -120,7 +120,7 @@ function start() {
   const statsBuf = new Uint8Array(32 * 32 * 4);
 
   const simScale = new THREE.Vector2(1, 1);
-  const world = { seed: Math.random() * 100, steps: 0, rain: 0, wet: 0, rainLeft: 0, objects: [], mood: 'day', petals: false };
+  const world = { seed: Math.random() * 100, steps: 0, rain: 0, wet: 0, rainLeft: 0, objects: [], mood: 'day', petals: false, shroom: 0, nature: !CAPTURE, nextRain: 90, nextMood: 100 };
   const brush = { a: new THREE.Vector2(), b: new THREE.Vector2(), dir: new THREE.Vector2(1, 0), down: false, radius: 0.04 };
   const flags = { bake: true, groundSave: true, saveAt: 0 };
 
@@ -145,7 +145,7 @@ function start() {
     uState: { value: null }, uSub: { value: subRT.texture }, uTex0: { value: heightRT.textures[0] }, uTex1: { value: heightRT.textures[1] },
     uGround: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
     uSimScale: { value: simScale }, uView: { value: new THREE.Vector3(0.5, 0.5, 1) }, uStateSize: { value: new THREE.Vector2(SIM, SIM) },
-    uTime: { value: 0 }, uLight: { value: 0.5 }, uRain: { value: 0 }, uWet: { value: 0 },
+    uTime: { value: 0 }, uLight: { value: 0.5 }, uRain: { value: 0 }, uWet: { value: 0 }, uAge: { value: 0 }, uShroom: { value: 0 },
     uSun: { value: new THREE.Vector3(...MOODS.day.sun) }, uSunCol: { value: new THREE.Vector3(...MOODS.day.sunCol) },
     uSkyCol: { value: new THREE.Vector3(...MOODS.day.sky) }, uMist: { value: 0 }, uNight: { value: 0 }, uLamps: { value: lamps },
   });
@@ -282,7 +282,7 @@ function start() {
     try {
       if (flags.groundSave || !savedGround) { savedGround = snapshot(0, Math.min(GROUND, 1024)); flags.groundSave = false; }
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        v: 1, seed: world.seed, steps: world.steps, objects: world.objects, mood: world.mood, petals: world.petals,
+        v: 1, seed: world.seed, steps: world.steps, objects: world.objects, mood: world.mood, petals: world.petals, nature: world.nature,
         humidity: +$('humidity').value, light: +$('light').value, speed: +$('speed').value,
         ground: savedGround, moss: snapshot(1, 256),
       }));
@@ -315,6 +315,7 @@ function start() {
     }
     setMood(MOODS[data.mood] ? data.mood : 'day', true);
     setPetals(!!data.petals);
+    if (typeof data.nature === 'boolean') setNature(data.nature);
     savedGround = data.ground; flags.groundSave = false;
     return true;
   }
@@ -337,9 +338,23 @@ function start() {
     uPx.value = dpr;
     sizeRing();
   }
-  const toSim = (x, y, out) => out.set((x / cssW - 0.5) * simScale.x + 0.5, (0.5 - y / cssH) * simScale.y + 0.5);
-  const toScreen = (x, y) => [((x - 0.5) / simScale.x + 0.5) * cssW, (0.5 - (y - 0.5) / simScale.y) * cssH];
-  const uvToPx = (r) => r / simScale.x * cssW;
+  // The camera: centre (x, y) and zoom. Zoom 1 shows the whole garden.
+  const view = viewMat.uniforms.uView.value;
+  const toSim = (x, y, out) => out.set((x / cssW - 0.5) * simScale.x / view.z + view.x, (0.5 - y / cssH) * simScale.y / view.z + view.y);
+  const toScreen = (x, y) => [((x - view.x) * view.z / simScale.x + 0.5) * cssW, (0.5 - (y - view.y) * view.z / simScale.y) * cssH];
+  const uvToPx = (r) => r * view.z / simScale.x * cssW;
+  function setView(x, y, z) {
+    z = Math.min(6, Math.max(1, z));
+    const hx = simScale.x / 2 * (1 - 1 / z), hy = simScale.y / 2 * (1 - 1 / z);
+    view.set(Math.min(0.5 + hx, Math.max(0.5 - hx, x)), Math.min(0.5 + hy, Math.max(0.5 - hy, y)), z);
+    sizeRing();
+  }
+  // Zoom by `factor`, keeping the garden point under screen position (sx, sy) fixed.
+  function zoomAt(sx, sy, factor) {
+    const before = toSim(sx, sy, new THREE.Vector2());
+    const z = Math.min(6, Math.max(1, view.z * factor));
+    setView(before.x - (sx / cssW - 0.5) * simScale.x / z, before.y - (0.5 - sy / cssH) * simScale.y / z, z);
+  }
 
   // ---------- tools ----------
   const ring = $('ring'), selRing = $('sel'), hint = $('hint');
@@ -458,8 +473,23 @@ function start() {
     ring.hidden = group.key === 'objects' || (e.pointerType !== 'mouse' && !brush.down);
     ring.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
   };
+  // Two fingers (or the middle mouse button) move the camera instead of the brush.
+  const fingers = new Map();
+  let pinch = null;
+  const pinchState = () => {
+    const [a, b] = [...fingers.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  };
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size === 2 || e.button === 1) {
+      e.preventDefault();
+      if (dragging) { clearUnder(dragging); dragging = null; }
+      brush.down = false; ring.hidden = true;
+      pinch = fingers.size === 2 ? pinchState() : { d: 0, mx: e.clientX, my: e.clientY };
+      return;
+    }
     toSim(e.clientX, e.clientY, ptr);
     hint.classList.add('gone');
     if (!$('panel').hidden) setGroup('scene');
@@ -476,6 +506,14 @@ function start() {
     moveRing(e);
   });
   canvas.addEventListener('pointermove', (e) => {
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch) {
+      const now = fingers.size >= 2 ? pinchState() : { d: 0, mx: e.clientX, my: e.clientY };
+      if (pinch.d > 0 && now.d > 0) zoomAt(now.mx, now.my, now.d / pinch.d);
+      setView(view.x - (now.mx - pinch.mx) / cssW * simScale.x / view.z, view.y + (now.my - pinch.my) / cssH * simScale.y / view.z, view.z);
+      pinch = now;
+      return;
+    }
     moveRing(e);
     toSim(e.clientX, e.clientY, ptr);
     if (dragging) {
@@ -485,6 +523,8 @@ function start() {
     } else if (brush.down) brush.b.copy(ptr);
   });
   const lift = (e) => {
+    fingers.delete(e.pointerId);
+    if (pinch) { if (fingers.size < 2) pinch = null; return; }
     if (dragging) { delete dragging.fresh; clearUnder(dragging); dragging = null; touch(); }
     brush.down = false;
     if (e.pointerType !== 'mouse') ring.hidden = true;
@@ -500,7 +540,8 @@ function start() {
       if (e.shiftKey) selected.rot += up ? 0.12 : -0.12;
       else selected.scale = Math.min(t.size[1], Math.max(t.size[0], selected.scale * (up ? 1.06 : 0.94)));
       select(selected); flags.bake = true; touch();
-    } else setSize(brush.radius * (up ? 1.1 : 0.9));
+    } else if (e.altKey) setSize(brush.radius * (up ? 1.1 : 0.9));
+    else zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
   }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -542,7 +583,17 @@ function start() {
     fireflies.visible = moodNow.night > 0.32;
     petalMat.uniforms.uTint.value.setScalar(1 - 0.72 * moodNow.night);
   }
-  [...$('moods').children].forEach((b) => b.addEventListener('click', () => setMood(b.dataset.mood)));
+  [...$('moods').children].forEach((b) => b.addEventListener('click', () => { setNature(false); setMood(b.dataset.mood); }));
+  // "Let nature run": showers drift in on their own and the light moves through the day.
+  function setNature(v) {
+    world.nature = v;
+    $('nature').setAttribute('aria-pressed', String(v));
+    touch();
+  }
+  $('nature').addEventListener('click', () => setNature(!world.nature));
+  $('nature').setAttribute('aria-pressed', String(world.nature));
+  const DAY_CYCLE = ['dawn', 'day', 'day', 'dusk', 'night'];
+  let dayIndex = 1;
   function setPetals(v) {
     world.petals = v; petals.visible = v;
     $('petals').setAttribute('aria-pressed', String(v));
@@ -619,6 +670,7 @@ function start() {
     } else if (k === 'r') world.rainLeft = world.rainLeft > 0 ? 0 : 12;
     else if (k === 'h') setBare(!document.body.classList.contains('bare'));
     else if (k === 'p') savePicture();
+    else if (k === '0') setView(0.5, 0.5, 1);
     else if (k === '[') setSize(brush.radius * 0.85);
     else if (k === ']') setSize(brush.radius * 1.15);
     else if ((k === 'delete' || k === 'backspace') && selected) $('objremove').click();
@@ -650,6 +702,14 @@ function start() {
     if (rainBtn) rainBtn.classList.toggle('live', world.rainLeft > 0);
     ambience.setRain(world.rain);
     // Surfaces soak quickly and stay wet for a while after the shower, drying faster in dry air.
+    if (world.nature) {
+      world.nextRain -= dtReal; world.nextMood -= dtReal;
+      if (world.nextRain <= 0) { world.rainLeft = 10 + Math.random() * 10; world.nextRain = 120 + Math.random() * 150; }
+      if (world.nextMood <= 0) { dayIndex = (dayIndex + 1) % DAY_CYCLE.length; setMood(DAY_CYCLE[dayIndex]); world.nextMood = 70 + Math.random() * 40; }
+    }
+    // Mushrooms come up in the minute after rain and fade over the following few.
+    if (world.wet > 0.5) world.shroom = Math.min(1, world.shroom + dtReal / 25);
+    else world.shroom = Math.max(0, world.shroom - dtReal / 240);
     if (world.rain > 0.3) world.wet += (1 - world.wet) * Math.min(1, dtReal * 0.6);
     else world.wet = Math.max(0, world.wet - dtReal * (1.5 - simMat.uniforms.uHumidity.value) / 40);
 
@@ -686,6 +746,8 @@ function start() {
     viewMat.uniforms.uTime.value = time;
     viewMat.uniforms.uRain.value = world.rain;
     viewMat.uniforms.uWet.value = world.wet;
+    viewMat.uniforms.uShroom.value = world.shroom;
+    viewMat.uniforms.uAge.value = world.steps * DAYS_PER_STEP / 365;
     composer.render();
 
     if (frame % 20 === 0) {
