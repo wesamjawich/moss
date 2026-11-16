@@ -355,7 +355,7 @@ void main() {
   float wetM = max(smoothstep(0.30, 0.75, W), uWet * 0.9);
   float bead = step(mix(0.93, 0.80, uWet), hash12(vec2(id * 13.0, 41.0))) * fall(0.02, 0.13, gDist);
   colM *= mix(1.0, 0.86, wetM);
-  colM += skyCol * wetM * (0.06 + 0.30 * rim) * (0.5 + 1.5 * skyGap) * aoM;       // drenched shoots glisten
+  colM += skyCol * wetM * (0.02 + 0.16 * rim) * (0.5 + 1.5 * skyGap) * aoM;       // drenched shoots glisten
   float tw = 0.55 + 0.45 * sin(uTime * (1.5 + 3.0 * id) + id * 80.0);
   colM += bead * wetM * (sunCol * sunI * 1.6 * tw + skyCol * 1.2);
   colM += pow(max(dot(N, Hv), 0.0), 40.0) * wetM * 0.25 * sunCol * sunI;

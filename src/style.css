@@ -52,7 +52,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--moss); outl
   top: calc(16px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
 }
 #show:hover { opacity: 1; }
-body.bare .ui { display: none; }
+body.bare .ui { display: none !important; }
 
 #hint, #fail, #toast {
   position: fixed; left: 50%; transform: translate(-50%, -50%); margin: 0; pointer-events: none;
