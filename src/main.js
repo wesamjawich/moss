@@ -119,7 +119,7 @@ function start() {
   const statsBuf = new Uint8Array(32 * 32 * 4);
 
   const simScale = new THREE.Vector2(1, 1);
-  const world = { seed: Math.random() * 100, steps: 0, rain: 0, rainLeft: 0, objects: [], mood: 'day', petals: false };
+  const world = { seed: Math.random() * 100, steps: 0, rain: 0, wet: 0, rainLeft: 0, objects: [], mood: 'day', petals: false };
   const brush = { a: new THREE.Vector2(), b: new THREE.Vector2(), dir: new THREE.Vector2(1, 0), down: false, radius: 0.04 };
   const flags = { bake: true, groundSave: true, saveAt: 0 };
 
@@ -144,7 +144,7 @@ function start() {
     uState: { value: null }, uSub: { value: subRT.texture }, uTex0: { value: heightRT.textures[0] }, uTex1: { value: heightRT.textures[1] },
     uGround: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
     uSimScale: { value: simScale }, uStateSize: { value: new THREE.Vector2(SIM, SIM) },
-    uTime: { value: 0 }, uLight: { value: 0.5 }, uRain: { value: 0 },
+    uTime: { value: 0 }, uLight: { value: 0.5 }, uRain: { value: 0 }, uWet: { value: 0 },
     uSun: { value: new THREE.Vector3(...MOODS.day.sun) }, uSunCol: { value: new THREE.Vector3(...MOODS.day.sunCol) },
     uSkyCol: { value: new THREE.Vector3(...MOODS.day.sky) }, uMist: { value: 0 }, uNight: { value: 0 }, uLamps: { value: lamps },
   });
@@ -363,7 +363,7 @@ function start() {
       b.classList.toggle('on', t === tool && !t.action && t.place === undefined);
       if (t.action === 'rain') b.id = 'rainBtn';
       b.addEventListener('click', () => {
-        if (t.action === 'rain') { world.rainLeft = world.rainLeft > 0 ? 0 : 7; return; }
+        if (t.action === 'rain') { world.rainLeft = world.rainLeft > 0 ? 0 : 12; return; }
         if (t.place !== undefined) { addObject(t.place); return; }
         tool = t; lastTool[group.key] = t; renderTools(); sizeRing();
       });
@@ -619,7 +619,7 @@ function start() {
     if (k >= '1' && k <= '5' && group.tools && group.key !== 'objects') {
       const t = group.tools.filter((x) => !x.action)[+k - 1];
       if (t) { tool = t; lastTool[group.key] = t; renderTools(); sizeRing(); }
-    } else if (k === 'r') world.rainLeft = world.rainLeft > 0 ? 0 : 7;
+    } else if (k === 'r') world.rainLeft = world.rainLeft > 0 ? 0 : 12;
     else if (k === 'h') setBare(!document.body.classList.contains('bare'));
     else if (k === 'p') savePicture();
     else if (k === '[') setSize(brush.radius * 0.85);
@@ -647,6 +647,9 @@ function start() {
     const rainBtn = $('rainBtn');
     if (rainBtn) rainBtn.classList.toggle('live', world.rainLeft > 0);
     ambience.setRain(world.rain);
+    // Surfaces soak quickly and stay wet for a while after the shower, drying faster in dry air.
+    if (world.rain > 0.3) world.wet += (1 - world.wet) * Math.min(1, dtReal * 0.6);
+    else world.wet = Math.max(0, world.wet - dtReal * (1.5 - simMat.uniforms.uHumidity.value) / 40);
 
     // Brushes act once per frame so their strength does not depend on the time setting.
     let simBrush = 0;
@@ -680,6 +683,7 @@ function start() {
     viewMat.uniforms.uGround.value = groundA.texture;
     viewMat.uniforms.uTime.value = time;
     viewMat.uniforms.uRain.value = world.rain;
+    viewMat.uniforms.uWet.value = world.wet;
     composer.render();
 
     if (frame % 20 === 0) {

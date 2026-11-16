@@ -15,6 +15,7 @@ uniform vec2 uStateSize;
 uniform float uTime;
 uniform float uLight;
 uniform float uRain;
+uniform float uWet;         // lingering wetness after rain, 0..1
 uniform vec3 uSun;           // direction towards the sun or moon
 uniform vec3 uSunCol;
 uniform vec3 uSkyCol;
@@ -261,8 +262,11 @@ void main() {
   float film = smoothstep(0.0, 0.07, B) * (1.0 - cov);
   rock = mix(rock, vec3(0.10, 0.17, 0.045), film * 0.75);
   rock *= 1.0 - 0.45 * film;                                    // contact shadow under the moss edge
-  float wetR = smoothstep(0.12, 0.60, W);
-  rock *= mix(1.0, mix(0.50, 0.72, soil), wetR);
+  // Wetness: local water from the simulation, or rain soaking everything. Wet stone darkens and its colour deepens.
+  float wetVar = 0.72 + 0.28 * fbm3(p * 9.0 + 4.0);
+  float wetR = max(smoothstep(0.12, 0.60, W), uWet * wetVar);
+  rock *= mix(1.0, mix(mix(0.40, 0.58, gravel), 0.62, soil), wetR);
+  rock = mix(vec3(dot(rock, vec3(0.30, 0.59, 0.11))), rock, 1.0 + 0.45 * wetR);
   rock = mix(rock, rock * vec3(0.90, 1.0, 0.92), wetR * 0.5);
 
   // ---- moss colour ----
@@ -286,8 +290,10 @@ void main() {
 
   // ---- lighting ----
   float ndl = max(dot(N, SUNV), 0.0);
-  vec3 sunCol = uSunCol;
+  // rain clouds dim and cool the light
+  vec3 sunCol = uSunCol * (1.0 - 0.55 * uRain);
   vec3 skyCol = uSkyCol * (0.55 + 0.75 * uLight);
+  skyCol = mix(skyCol, vec3(dot(skyCol, vec3(0.333))) * 1.15, 0.30 * uRain);
   float aoR = mix(0.35, 1.0, fall(0.42, 0.75, cav));
   float aoM = mix(0.40, 1.0, tip) * mix(0.75, 1.0, clump);
   float amb = 0.62 + 0.38 * N.z + 0.24 * dot(N.xy, vec2(-0.316, 0.949));   // open sky to one side keeps form readable in shade
@@ -306,6 +312,34 @@ void main() {
   float specR = pow(max(dot(N, Hv), 0.0), glossR) * mix(0.04, 0.9, wetR) * mix(0.3, 1.0, hard);
   vec3 colR = rock * (skyCol * aoR * amb + sunCol * sunI * ndl + lamp * aoR) + sunCol * sunI * specR * 0.35 + skyCol * specR * 0.25;
 
+  // A film of water: the wet surface mirrors the bright gaps in the canopy, strongest at glancing slopes.
+  float skyGap = 0.0;
+  if (wetR > 0.02) {
+    float slope = length(N.xy);
+    vec3 Nw = normalize(vec3(N.xy * 0.45, N.z));          // the film smooths over the grit
+    float fres = min(0.04 + 0.96 * pow(1.0 - Nw.z, 1.5), 0.45);
+    skyGap = komorebi(p + Nw.xy * 0.10 + 0.37, uTime * 0.6);
+    vec3 refl = skyCol * (0.35 + 3.0 * skyGap * skyGap);
+    float shine = mix(0.30, 1.0, hard);
+    colR += refl * wetR * (0.05 + 0.60 * fres) * shine * aoR;
+    colR += sunCol * sunI * pow(max(dot(Nw, Hv), 0.0), 90.0) * wetR * 0.9 * shine;
+    // rivulets running down the slopes while it rains
+    if (uRain > 0.01 && slope > 0.05) {
+      vec2 dn = N.xy / slope, pr = vec2(-dn.y, dn.x);
+      float run = vnoise(vec2(dot(p, pr) * 420.0, dot(p, dn) * 60.0 - uTime * 3.0));
+      colR += refl * 0.9 * smoothstep(0.70, 0.95, run) * uRain * smoothstep(0.08, 0.5, slope) * hard;
+    }
+    // puddles gather in the hollows and at the foot of stones
+    float puddle = uWet * smoothstep(0.60, 0.74, cav + 0.10 * (fbm3(p * 14.0) - 0.5)) * (1.0 - gravel) * (1.0 - mw.a);
+    if (puddle > 0.01) {
+      vec2 wp = p * 120.0;
+      vec3 wN = normalize(vec3(0.12 * uRain * (vnoise(wp + uTime * 2.0) - 0.5), 0.12 * uRain * (vnoise(wp + 9.0 - uTime * 1.7) - 0.5), 1.0));
+      vec3 pool = rock * 0.45 * (skyCol + sunCol * sunI * 0.4) + skyCol * (0.30 + 1.5 * skyGap)
+                + sunCol * sunI * pow(max(dot(wN, Hv), 0.0), 300.0) * 2.0;
+      colR = mix(colR, pool, puddle * 0.8);
+    }
+  }
+
   // moss: soft wrapped diffuse, light bleeding through the leaves, fuzzy rim
   float wrap = pow(clamp((dot(N, SUNV) + 0.45) / 1.45, 0.0, 1.0), 1.4);
   float rim = pow(1.0 - N.z, 1.5);
@@ -314,8 +348,10 @@ void main() {
             + mc * transl * sunCol * sunI * 0.55
             + vec3(0.55, 0.8, 0.3) * rim * skyCol * 0.25 * aoM;
   // dew: tiny twinkling beads on wet shoots
-  float wetM = smoothstep(0.30, 0.75, W);
-  float bead = step(0.93, hash12(vec2(id * 13.0, 41.0))) * fall(0.02, 0.13, gDist);
+  float wetM = max(smoothstep(0.30, 0.75, W), uWet * 0.9);
+  float bead = step(mix(0.93, 0.80, uWet), hash12(vec2(id * 13.0, 41.0))) * fall(0.02, 0.13, gDist);
+  colM *= mix(1.0, 0.86, wetM);
+  colM += skyCol * wetM * (0.06 + 0.30 * rim) * (0.5 + 1.5 * skyGap) * aoM;       // drenched shoots glisten
   float tw = 0.55 + 0.45 * sin(uTime * (1.5 + 3.0 * id) + id * 80.0);
   colM += bead * wetM * (sunCol * sunI * 1.6 * tw + skyCol * 1.2);
   colM += pow(max(dot(N, Hv), 0.0), 40.0) * wetM * 0.25 * sunCol * sunI;
@@ -362,13 +398,18 @@ void main() {
     float live = step(0.55, hash12(ri + 11.0 + floor(uTime * 0.9 + hash12(ri) * 7.0)));
     float ring = live * fall(0.0, 0.022, abs(rd - ph * 0.22)) * (1.0 - ph) * (1.0 - ph) * (1.0 - ph);
     col += ring * uRain * (skyCol * 0.9 + sunCol * sunI * 0.15);
+    // splashes: brief pinpoint flecks where drops strike
+    vec2 fp2 = p * 330.0;
+    float fleck = step(0.990, hash12(floor(fp2) + floor(uTime * 14.0) * 7.13)) * fall(0.10, 0.38, length(fract(fp2) - 0.5));
+    col += fleck * uRain * (skyCol * 2.0 + 0.12);
     col *= 1.0 - 0.18 * uRain;
   }
 
   // ---- drifting ground mist ----
-  if (uMist > 0.005) {
+  float mistAmt = uMist + 0.08 * uRain;
+  if (mistAmt > 0.005) {
     float m = fbm3(p * 2.6 + vec2(uTime * 0.020, uTime * 0.008)) * fbm3(p * 5.0 - vec2(uTime * 0.012, 0.0) + 9.0);
-    m = smoothstep(0.12, 0.55, m) * uMist;
+    m = smoothstep(0.12, 0.55, m) * mistAmt;
     col = mix(col, (skyCol * 1.5 + sunCol * mask * 0.10), m * 0.75);
   }
 
