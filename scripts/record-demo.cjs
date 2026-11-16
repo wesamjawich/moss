@@ -9,7 +9,7 @@ const path = require('path');
 const FPS = 24, W = 1280, H = 720;
 const dir = process.argv[2];
 const probe = process.argv.includes('--probe');
-const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=bare&sim=512&sub=1024&ground=1024';
+const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=6&sim=512&sub=1024&ground=1024';
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
@@ -67,89 +67,59 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=bare&s
 
   if (probe) { await F(4); await F(2, 20); console.log('probe ms/frame', (Date.now() - t0) / 6); await browser.close(); return; }
 
-  // ---- bare earth ----
-  await page.mouse.move(640, 330);
+  // ---- a ready-made garden with young moss ----
+  await page.mouse.move(640, 300);
   await page.evaluate(() => { document.getElementById('ring').hidden = true; });
-  await F(14);
-
-  // ---- lay a gravel shore ----
-  await tab('Ground');
-  await setRange('size', 0.09);
-  await stroke(line(6, 455, 1274, 430, 22, 1.5), 20);
-  await stroke(line(1274, 560, 6, 575, 12, 1), 16);
-  await stroke(line(6, 690, 1274, 690), 12);
-  await F(4);
-
-  // ---- rake it ----
-  await tool('Rake');
-  await stroke(line(700, 470, 1270, 420, 34, 1.2), 22);
-  await stroke(line(1270, 545, 640, 590, 30, 1.2), 22);
-  await F(4);
-
-  // ---- place stones, a branch, a lantern, a basin ----
-  await tab('Objects');
-  await place('Rock', 330, 395, { wheel: 5 });
-  await place('Rock', 462, 468, { wheel: -3 });
-  await place('Rock', 222, 478, { wheel: -1 });
-  await place('Flat stone', 880, 655, { frames: 8 });
-  await place('Flat stone', 935, 572, { frames: 8 });
-  await place('Flat stone', 1012, 498, { frames: 8 });
-  await place('Flat stone', 1064, 410, { frames: 8 });
-  await place('Branch', 800, 205, { turn: 3 });
-  await place('Lantern', 190, 175, { wheel: 2 });
-  await place('Basin', 1105, 215, { wheel: 1 });
-  await place('Jizō', 560, 285);
-  await page.keyboard.press('Escape');
-  await F(6);
+  await F(20);
 
   // ---- sow moss and mist it ----
-  await tab('Moss');
   await setRange('size', 0.06);
-  await stroke(line(60, 300, 640, 110, 30, 1), 16);
-  await stroke(line(660, 330, 1230, 110, -30, 1), 16);
-  await stroke(line(1180, 330, 120, 250, 40, 2), 18);
-  await stroke(line(180, 400, 520, 470, 20, 1), 10);
+  await stroke(line(680, 70, 1230, 150, 25, 1), 14);
+  await stroke(line(1230, 260, 980, 330, 15, 1), 8);
+  await stroke(line(40, 200, 120, 360), 8);
   await tool('Mist');
-  await stroke(line(80, 180, 1220, 240, 60, 1.5), 16);
-  await stroke(line(1220, 330, 80, 360, 40, 1.5), 14);
-  await page.mouse.move(640, 300);
+  await stroke(line(60, 120, 1240, 220, 50, 1.5), 16);
+  await page.mouse.move(640, 500);
   await F(6);
 
-  // ---- years pass ----
+  // ---- years pass: the moss spreads ----
   await setRange('humidity', 0.86);
-  for (let i = 0; i < 168; i++) await F(1, Math.round(6 + 26 * ease(Math.min(1, i / 40))));
+  for (let i = 0; i < 230; i++) await F(1, Math.round(5 + 30 * ease(Math.min(1, i / 70))));
   await F(8);
 
   // ---- rain ----
   await tool('Rain');
-  await F(66, 3);
+  await F(78, 4);
   await tool('Rain');
-  await F(30, 3);
+  await F(34, 4);
 
-  // ---- autumn leaves ----
-  await tab('Ground');
-  await tool('Leaves');
-  await stroke(line(640, 130, 960, 300, 25, 1), 12);
-  await stroke(line(120, 290, 330, 240, 15, 1), 8);
-  await page.mouse.move(640, 320);
-  await F(8);
+  // ---- scrape a path and a clearing ----
+  await tool('Scrape');
+  await setRange('size', 0.045);
+  await stroke(line(1252, 70, 1010, 345, 38, 1), 30);
+  await stroke((u) => [800 + 46 * Math.cos(u * 12.6), 112 + 34 * Math.sin(u * 12.6)], 22);
+  await F(5);
 
-  // ---- dusk, night, dawn ----
+  // ---- set a rock in the clearing and stepping stones along the path ----
+  await tab('Objects');
+  await place('Rock', 800, 112, { wheel: 1 });
+  await place('Flat stone', 1213, 112, { frames: 9 });
+  await place('Flat stone', 1150, 196, { frames: 9 });
+  await place('Flat stone', 1072, 278, { frames: 9 });
+  await page.keyboard.press('Escape');
+  await page.mouse.move(640, 520);
+  await F(6);
+
+  // ---- more years: moss closes in around the new stones ----
+  for (let i = 0; i < 130; i++) await F(1, Math.round(6 + 24 * ease(Math.min(1, i / 30))));
+
+  // ---- evening light, then the garden on its own ----
   await tab('Scene');
   await page.click('#moods button[data-mood="dusk"]');
-  await F(46, 2);
-  await page.click('#moods button[data-mood="night"]');
-  await F(64, 2);
-  await page.click('#petals');
-  await page.click('#moods button[data-mood="dawn"]');
-  await F(54, 2);
-  await page.click('#moods button[data-mood="day"]');
-  await F(20, 2);
-
-  // ---- the finished garden, controls hidden ----
+  await F(40, 2);
   await page.keyboard.press('h');
   await page.evaluate(() => { document.getElementById('ring').hidden = true; });
-  await F(80, 2);
+  await F(84, 2);
 
   console.log('frames', n, 'seconds', ((Date.now() - t0) / 1000).toFixed(0));
   await browser.close();

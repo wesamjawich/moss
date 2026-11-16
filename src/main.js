@@ -241,9 +241,9 @@ function start() {
 
   const clearUnder = (o) => { const f = footprint(o); step(0, 5, f.ax, f.ay, f.bx, f.by, f.r); };
 
-  function newGarden(kind) {
-    world.seed = Math.random() * 100;
-    const g = composeGarden(kind, simScale);
+  function newGarden(kind, rnd = Math.random) {
+    world.seed = rnd() * 100;
+    const g = composeGarden(kind, simScale, rnd);
     world.objects = g.objects;
     groundInitMat.uniforms.uSeed.value = world.seed;
     groundInitMat.uniforms.uStyle.value = g.style;
@@ -403,6 +403,8 @@ function start() {
     toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
   }
   function select(o) {
+    // A newly added object clears the moss beneath it only once it has been put somewhere.
+    if (selected && selected !== o && selected.fresh) { delete selected.fresh; clearUnder(selected); }
     selected = o;
     $('objpanel').hidden = !o;
     selRing.hidden = !o;
@@ -416,8 +418,8 @@ function start() {
     if (world.objects.length >= MAX_OBJECTS) { toast('The garden is full. Remove something first.'); return; }
     const j = () => (Math.random() - 0.5) * 0.18;
     const o = makeObject(type, 0.5 + j() * simScale.x, 0.5 + (0.08 + j()) * simScale.y);
+    o.fresh = true;
     world.objects.push(o);
-    clearUnder(o);
     flags.bake = true;
     hint.classList.add('gone');
     select(o);
@@ -483,7 +485,7 @@ function start() {
     } else if (brush.down) brush.b.copy(ptr);
   });
   const lift = (e) => {
-    if (dragging) { clearUnder(dragging); dragging = null; touch(); }
+    if (dragging) { delete dragging.fresh; clearUnder(dragging); dragging = null; touch(); }
     brush.down = false;
     if (e.pointerType !== 'mouse') ring.hidden = true;
   };
@@ -703,7 +705,12 @@ function start() {
   setMood('day', true);
   window.__moss = { step, world, brush, flags, newGarden, addObject, setMood, setGroup, groundStroke, save, select, advance, toScreen };
   const begin = (restored) => {
-    if (!restored) newGarden(query.get('start') || 'composed'); else hint.classList.add('gone');
+    if (!restored) {
+      // ?seed=N makes the first garden repeatable.
+      let a = (+query.get('seed') || 0) >>> 0;
+      const seeded = () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      newGarden(query.get('start') || 'composed', query.has('seed') ? seeded : Math.random);
+    } else hint.classList.add('gone');
     if (!CAPTURE) requestAnimationFrame(tick);
   };
   (query.has('fresh') || CAPTURE ? Promise.resolve(false) : restore()).then(begin, () => begin(false));

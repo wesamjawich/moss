@@ -147,7 +147,7 @@ void main() {
       W -= 0.10 * f * W;
       Hy -= 0.03 * f * Hy;
     } else if (uBrushMode < 4.5) {     // scrape
-      B -= 0.12 * f * (0.5 + r2);
+      B -= 0.30 * f * (0.5 + r2);
       W -= 0.02 * f * W;
     } else {
       B *= 1.0 - fall(uBrushR * 0.85, uBrushR, d);
