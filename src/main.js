@@ -20,6 +20,7 @@ const DAYS_PER_STEP = 1.5;
 const BASE_STEPS = 1.25;                    // simulation steps per frame at 1× (60 fps)
 const SPEEDS = [0, 0.25, 0.5, 1, 2, 4, 8];
 const STORE_KEY = 'koke.garden.v1';
+const CAPTURE = query.has('capture');
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('view');
@@ -584,12 +585,6 @@ function start() {
     out.width = canvas.width; out.height = canvas.height;
     const g = out.getContext('2d');
     g.drawImage(canvas, 0, 0);
-    const s = Math.max(14, out.height * 0.024);
-    g.font = `${s}px "Shippori Mincho", "Hiragino Mincho ProN", serif`;
-    g.textAlign = 'right'; g.textBaseline = 'alphabetic';
-    g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = s * 0.6;
-    g.fillStyle = 'rgba(238,240,228,0.82)';
-    g.fillText('苔  koke', out.width - s * 1.2, out.height - s * 1.1);
     const blob = await new Promise((r) => out.toBlob(r, 'image/png'));
     if (!blob) { toast('The picture could not be made.'); return; }
     const filename = `koke-garden-${new Date().toISOString().slice(0, 10)}.png`;
@@ -636,11 +631,16 @@ function start() {
   let last = performance.now(), frame = 0, time = 0, slow = 0, acc = 0;
   function tick(now) {
     const dtReal = Math.min(0.1, (now - last) / 1000);
-    last = now; time += dtReal; frame++;
-
+    last = now;
     // Ease the render resolution down if this GPU cannot keep up.
     slow = dtReal > 0.026 ? slow + 1 : Math.max(0, slow - 2);
     if (slow > 45 && quality > 0.5 && frame > 30) { quality *= 0.82; slow = 0; resize(); }
+    advance(dtReal, now);
+    requestAnimationFrame(tick);
+  }
+  // One frame of garden time. With ?capture the page does not run on its own: a recorder calls this per video frame.
+  function advance(dtReal, now = performance.now()) {
+    time += dtReal; frame++;
 
     if (world.rainLeft > 0) world.rainLeft -= dtReal;
     world.rain += ((world.rainLeft > 0 ? 1 : 0) - world.rain) * Math.min(1, dtReal * 2.5);
@@ -695,19 +695,18 @@ function start() {
       const year = Math.floor(world.steps * DAYS_PER_STEP / 365) + 1;
       readout.textContent = `Year ${year} · moss cover ${Math.round(c / (32 * 32 * 255) * 100)}%`;
     }
-    if (flags.saveAt && now > flags.saveAt && !brush.down && !dragging) save();
-    requestAnimationFrame(tick);
+    if (flags.saveAt && now > flags.saveAt && !brush.down && !dragging && !CAPTURE) save();
   }
 
   resize();
   setGroup('moss');
   setMood('day', true);
-  window.__moss = { step, world, brush, flags, newGarden, addObject, setMood, setGroup, groundStroke, save, select };
+  window.__moss = { step, world, brush, flags, newGarden, addObject, setMood, setGroup, groundStroke, save, select, advance, toScreen };
   const begin = (restored) => {
-    if (!restored) newGarden('composed'); else hint.classList.add('gone');
-    requestAnimationFrame(tick);
+    if (!restored) newGarden(query.get('start') || 'composed'); else hint.classList.add('gone');
+    if (!CAPTURE) requestAnimationFrame(tick);
   };
-  (query.has('fresh') ? Promise.resolve(false) : restore()).then(begin, () => begin(false));
+  (query.has('fresh') || CAPTURE ? Promise.resolve(false) : restore()).then(begin, () => begin(false));
 }
 
 try {

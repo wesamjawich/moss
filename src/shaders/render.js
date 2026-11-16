@@ -63,6 +63,9 @@ vec3 tuft(vec2 p, float star) {
   return vec3(dome * (0.55 + 0.45 * id), id, d);
 }
 
+// Scales the finest procedural detail to the pixel grid so it never aliases on small screens.
+float gFq = 1.0;
+
 // Globals describing the moss at the last evaluated point.
 float gCov, gDome, gId, gSp, gClump, gDist;
 
@@ -75,7 +78,7 @@ float mossH(vec2 p, float B) {
   gDist = mix(t2.z, t1.z, step(0.5, gSp));
   gClump = fbm3(p * 34.0);
   float edge = B + (gDome - 0.45) * 0.10 + (gClump - 0.5) * 0.10;
-  gCov = smoothstep(0.035, 0.10, edge);
+  gCov = smoothstep(0.035, 0.10, edge) * smoothstep(0.004, 0.03, B);   // no moss where none has grown
   float thick = B * (0.45 + 1.1 * gClump);
   return gCov * (thick * MS + gDome * mix(0.0011, 0.0024, gSp) * (0.45 + 0.55 * smoothstep(0.04, 0.4, B)));
 }
@@ -84,8 +87,8 @@ float mossH(vec2 p, float B) {
 float micro(vec2 p, float gravel, float wood, float ang) {
   float c = cos(ang), s = sin(ang);
   vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
-  float grit = 0.0020 * (fbm(p * 210.0) - 0.5) + 0.0007 * (vnoise(p * 800.0) - 0.5);
-  float peb = 0.0016 * (vnoise(p * 520.0) - 0.5) + 0.0010 * (vnoise(p * 1100.0) - 0.5);
+  float grit = 0.0020 * (fbm(p * 210.0 * gFq) - 0.5) + 0.0007 * (vnoise(p * 800.0 * gFq) - 0.5);
+  float peb = 0.0016 * (vnoise(p * 520.0 * gFq) - 0.5) + 0.0010 * (vnoise(p * 1100.0 * gFq) - 0.5);
   float fibre = 0.0022 * (fbm(vec2(q.x * 24.0, q.y * 260.0)) - 0.5);
   return mix(mix(grit, peb, gravel), fibre, wood);
 }
@@ -162,6 +165,7 @@ void main() {
   vec2 p = (vUv - 0.5) * uSimScale + 0.5;
   float px = uSimScale.x / uRes.x;
   float e = max(px, 0.00050);
+  gFq = clamp(0.42 / (px * 1100.0), 0.35, 1.0);
   vec3 SUNV = normalize(uSun);
 
   vec4 st = texBicubic(uState, p, uStateSize);
@@ -207,7 +211,7 @@ void main() {
   // ---- materials ----
   vec2 sp2 = p + oseed * 3.7;                       // each stone carries its own markings
   float g1 = fbm(sp2 * 6.0 + 2.0), g2 = fbm(p * 44.0 + 5.0);
-  float speck = vnoise(p * 1100.0 + 13.0);
+  float speck = vnoise(p * 1100.0 * gFq + 13.0);
   float lichen = smoothstep(0.60, 0.64, fbm(sp2 * 8.0 + 40.0) + 0.16 * (fbm(p * 70.0) - 0.5)) * (1.0 - cavn);
   float lichen2 = smoothstep(0.70, 0.73, fbm(sp2 * 13.0 + 80.0) + 0.1 * (g2 - 0.5)) * (1.0 - cavn);
 
@@ -242,11 +246,11 @@ void main() {
   vec3 earth = mix(vec3(0.040, 0.029, 0.021), vec3(0.110, 0.078, 0.050), fbm(p * 30.0 + 3.0));
   earth *= 0.75 + 0.5 * fbm(p * 4.0 + 8.0);
   earth *= 0.7 + 0.6 * g2;
-  float needle = smoothstep(0.80, 0.86, vnoise(vec2(p.x * 900.0 + 40.0 * vnoise(p * 60.0), p.y * 170.0)));
-  earth = mix(earth, vec3(0.30, 0.20, 0.10), needle * 0.5);
+  earth = mix(earth, vec3(0.26, 0.18, 0.10), smoothstep(0.84, 0.93, speck) * 0.45);        // flecks of leaf litter
+  earth = mix(earth, vec3(0.015, 0.012, 0.010), fall(0.08, 0.20, speck) * 0.5);
 
   // pale river gravel
-  vec3 pv = voro(p * 520.0);
+  vec3 pv = voro(p * 520.0 * max(gFq, 0.6));
   vec3 grav = mix(vec3(0.40, 0.39, 0.37), vec3(0.68, 0.66, 0.61), pv.z);
   grav = mix(grav, vec3(0.50, 0.44, 0.36), step(0.85, fract(pv.z * 7.3)) * 0.6);
   grav *= 0.62 + 0.38 * smoothstep(0.0, 0.25, pv.y - pv.x);
