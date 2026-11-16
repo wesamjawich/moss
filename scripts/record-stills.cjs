@@ -13,7 +13,7 @@ const GARDENS = [
 
 (async () => {
   const dir = process.argv[2];
-  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const browser = await chromium.launch({ args: process.env.SOFTWARE ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : ['--enable-gpu', '--ignore-gpu-blocklist'] });
   for (const [i, g] of GARDENS.entries()) {
     if (process.env.ONLY && +process.env.ONLY !== i) continue;
     const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });

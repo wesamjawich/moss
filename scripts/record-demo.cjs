@@ -9,10 +9,13 @@ const path = require('path');
 const FPS = 24, W = 390, H = 844, DPR = 2;      // an iPhone-shaped portrait frame, 780 x 1688
 const dir = process.argv[2];
 const probe = process.argv.includes('--probe');
-const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=3&sim=768&sub=2048&ground=1024';
+// SOFTWARE=1 forces CPU rendering (for machines without a GPU, where a recording takes most of an hour).
+const GPU_ARGS = process.env.SOFTWARE ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : ['--enable-gpu', '--ignore-gpu-blocklist'];
+const SIM = process.env.SOFTWARE ? 'sim=768&sub=2048&ground=1024' : 'sim=1024&sub=2048&ground=1024';
+const url = process.env.DEMO_URL || `http://localhost:4173/?capture&start=bare&${SIM}`;
 
 (async () => {
-  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const browser = await chromium.launch({ args: GPU_ARGS });
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[error]', m.text().slice(0, 500)); });
@@ -75,45 +78,76 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surpri
 
   const bare = (v) => page.evaluate((b) => { document.body.classList.toggle('bare', b); document.getElementById('ring').hidden = true; document.getElementById('hint').hidden = true; document.getElementById('show').hidden = true; }, v);
   const park = async () => { await page.mouse.move(195, 640); await page.evaluate(() => { document.getElementById('ring').hidden = true; }); };
+  // A smooth curve through points (Catmull-Rom), eased so the hand speeds up and settles.
+  const curve = (pts) => (u) => {
+    const t = ease(u) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(t)), f = t - i;
+    const p = (k) => pts[Math.max(0, Math.min(pts.length - 1, k))];
+    const [a, b, c, d] = [p(i - 1), p(i), p(i + 1), p(i + 2)];
+    const cr = (k) => 0.5 * (2 * b[k] + (c[k] - a[k]) * f + (2 * a[k] - 5 * b[k] + 4 * c[k] - d[k]) * f * f + (3 * b[k] - a[k] - 3 * c[k] + d[k]) * f * f * f);
+    return [cr(0), cr(1)];
+  };
+  const spiral = (cx, cy, r0, r1, turns) => (u) => { const a = u * turns * 6.2832 - 1.2, r = r0 + (r1 - r0) * u; return [cx + r * Math.cos(a), cy + r * 0.92 * Math.sin(a)]; };
+  // view-space helper: where a screen point (at zoom 1) sits in the garden
+  const uv = (sx, sy) => ({ x: (sx / W - 0.5) * (W / H) + 0.5, y: (0.5 - sy / H) + 0.5 });
 
-  // ---- macro: young moss creeping over the soil in dappled light ----
-  await bare(true);
-  await setRange('light', 0.62);
+  // ---- bare earth; a river of gravel poured in one sweeping line ----
+  await setRange('light', 0.6);
   await setRange('humidity', 0.86);
-  await page.evaluate(() => { const m = window.__moss; for (let k = 0; k < 6; k++) m.step(0, 1, 0.36, 0.80, 0.56, 0.90, 0.07); });
-  cam = { x: 0.43, y: 0.83, z: 3.4 };
-  await F(120, 3, { x: 0.47, y: 0.81, z: 3.0 });
+  await park();
+  await F(12);
+  await tab('Ground');
+  await setRange('size', 0.085);
+  await stroke(curve([[352, 70], [268, 190], [292, 330], [236, 470], [262, 600], [200, 690]]), 34);
+  await stroke(curve([[214, 640], [300, 560], [318, 420], [330, 250], [300, 120]]), 22);
 
-  // ---- pull back as the years pass and the garden fills in ----
-  await F(170, 16, { x: 0.5, y: 0.5, z: 1 });
-  await F(40, 22);
+  // ---- raked: a spiral where the main stone will stand, a long wave downstream ----
+  await tool('Rake');
+  await setRange('size', 0.05);
+  await stroke(spiral(272, 330, 10, 62, 2.6), 36);
+  await stroke(curve([[250, 440], [300, 500], [236, 570], [280, 640]]), 18);
 
-  // ---- rain ----
-  await page.evaluate(() => { window.__moss.world.rainLeft = 3.4; });
-  await F(120, 4, { x: 0.5, y: 0.47, z: 1.12 });
-
-  // ---- the gardener's hand: scrape a path, set stones along it ----
-  await F(16, 2, { x: 0.5, y: 0.5, z: 1 });
-  await bare(false);
-  await tool('Scrape');
-  await setRange('size', 0.035);
-  await stroke(line(35, 100, 270, 210, 14, 1), 26);
-  await stroke((u) => [190 + 24 * Math.cos(u * 12.6), 320 + 20 * Math.sin(u * 12.6)], 18);
+  // ---- stones, a branch, a lantern, a basin ----
   await tab('Objects');
-  await place('Rock', 190, 320, { wheel: 1, frames: 9 });
-  await place('Flat stone', 75, 116, { frames: 7 });
-  await place('Flat stone', 150, 152, { frames: 7 });
-  await place('Flat stone', 226, 190, { frames: 7 });
+  await place('Rock', 272, 330, { wheel: 3, frames: 7 });
+  await place('Rock', 226, 382, { wheel: -2, frames: 6 });
+  await place('Flat stone', 262, 520, { frames: 6 });
+  await place('Flat stone', 228, 590, { frames: 6 });
+  await place('Flat stone', 268, 655, { frames: 6 });
+  await place('Branch', 112, 468, { turn: 2, frames: 7 });
+  await place('Lantern', 92, 176, { wheel: 2, frames: 7 });
+  await place('Basin', 318, 128, { frames: 7 });
   await page.keyboard.press('Escape');
+
+  // ---- sow in one long wandering gesture, then a breath of mist ----
+  await tab('Moss');
+  await setRange('size', 0.055);
+  await stroke(curve([[150, 60], [60, 110], [170, 210], [70, 300], [160, 380], [60, 470], [150, 560], [70, 660]]), 40);
+  await tool('Mist');
+  await stroke(curve([[40, 640], [150, 470], [60, 300], [170, 130], [240, 60]]), 22);
   await park();
   await bare(true);
 
-  // ---- push in while moss closes around the new stones ----
-  await F(150, 14, { x: 0.45, y: 0.80, z: 2.1 });
+  // ---- years pass over the whole garden, with one slow visit to the moss front ----
+  const lapse = (i, n) => Math.round(6 + 28 * ease(Math.min(1, i / 40)) * ease(Math.min(1, (n - i) / 20)));
+  for (let i = 0; i < 90; i++) await F(1, lapse(i, 90), null);
+  await F(70, 22, { ...uv(120, 300), z: 2.3 });
+  await F(50, 14, { ...uv(150, 360), z: 2.0 });
+  await F(80, 26, { x: 0.5, y: 0.5, z: 1 });
 
-  // ---- evening ----
+  // ---- rain, then mushrooms on the old branch ----
+  await page.evaluate(() => { window.__moss.world.rainLeft = 3.6; });
+  await F(96, 4, { x: 0.5, y: 0.48, z: 1.1 });
+  await F(84, 5, { ...uv(118, 470), z: 2.6 });
+
+  // ---- dusk, lantern light and fireflies, dawn over the finished garden ----
   await page.evaluate(() => window.__moss.setMood('dusk'));
-  await F(96, 3, { x: 0.5, y: 0.56, z: 1.25 });
+  await F(56, 3, { x: 0.5, y: 0.5, z: 1 });
+  await page.evaluate(() => window.__moss.setMood('night'));
+  await F(72, 3, { ...uv(120, 210), z: 1.6 });
+  await page.evaluate(() => window.__moss.setMood('dawn'));
+  await F(70, 3, { x: 0.5, y: 0.5, z: 1 });
+  await page.evaluate(() => window.__moss.setMood('day'));
+  await F(40, 3);
 
   console.log('frames', n, 'seconds', ((Date.now() - t0) / 1000).toFixed(0));
   await browser.close();
