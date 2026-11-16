@@ -15,6 +15,7 @@ const GARDENS = [
   const dir = process.argv[2];
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   for (const [i, g] of GARDENS.entries()) {
+    if (process.env.ONLY && +process.env.ONLY !== i) continue;
     const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
     page.on('pageerror', (e) => console.log('[pageerror]', e.message));
     await page.goto(`http://localhost:4173/?capture&start=surprise&seed=${g.seed}&sim=512&sub=1024&ground=1024`);
