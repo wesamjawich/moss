@@ -133,17 +133,19 @@ float flecks(vec2 p, float f, float t, float keep) {
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec2 g = vec2(float(i), float(j));
     vec2 hsh = hash22(ip + g + f);
-    vec2 c = g + 0.5 + 0.38 * sin(hsh * 6.2831 + t * (0.25 + 0.3 * hsh.yx));
+    vec2 c = g + 0.5 + 0.30 * (hsh - 0.5) + 0.035 * sin(hsh * 6.2831 + t * (0.10 + 0.12 * hsh.yx));   // each gap sits still, trembling slightly
     float r = 0.22 + 0.40 * hash12(ip + g + 3.1 * f);
     float on = step(1.0 - keep, hash12(ip + g + 9.7));
-    float breathe = 0.75 + 0.25 * sin(t * (0.5 + hsh.x) + hsh.y * 20.0);
+    float breathe = 0.93 + 0.07 * sin(t * (0.35 + 0.4 * hsh.x) + hsh.y * 20.0);
     a += on * breathe * fall(r * 0.45, r, length(c - fp));
   }
   return a;
 }
 float komorebi(vec2 p, float t) {
-  vec2 q = p + 0.010 * vec2(sin(t * 0.55 + p.y * 5.0), cos(t * 0.42 + p.x * 4.0));
-  float canopy = fbm3(q * 1.9 + vec2(t * 0.015, -t * 0.008));
+  // The whole canopy sways together in the breeze: a slow, shared drift that swells in occasional gusts.
+  float gust = 0.35 + 0.65 * vnoise(vec2(t * 0.11, 3.0));
+  vec2 q = p + 0.006 * gust * vec2(sin(t * 0.38 + p.y * 1.7), 0.6 * cos(t * 0.29 + p.x * 1.3));
+  float canopy = fbm3(q * 1.9 + vec2(t * 0.0025, -t * 0.0015));
   float th = mix(0.78, 0.30, uLight);
   float open = smoothstep(th - 0.12, th + 0.22, canopy);
   float keep = mix(0.25, 0.85, uLight);
