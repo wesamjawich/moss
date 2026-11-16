@@ -6,14 +6,14 @@
 const { chromium } = require('playwright');
 const path = require('path');
 
-const FPS = 24, W = 1280, H = 720;
+const FPS = 24, W = 390, H = 844, DPR = 2;      // an iPhone-shaped portrait frame, 780 x 1688
 const dir = process.argv[2];
 const probe = process.argv.includes('--probe');
-const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=6&sim=512&sub=1024&ground=1024';
+const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surprise&seed=3&sim=512&sub=1024&ground=1024';
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[error]', m.text().slice(0, 500)); });
   await page.goto(url);
@@ -68,18 +68,18 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surpri
   if (probe) { await F(4); await F(2, 20); console.log('probe ms/frame', (Date.now() - t0) / 6); await browser.close(); return; }
 
   // ---- a ready-made garden with young moss ----
-  await page.mouse.move(640, 300);
-  await page.evaluate(() => { document.getElementById('ring').hidden = true; });
+  const park = async () => { await page.mouse.move(195, 600); await page.evaluate(() => { document.getElementById('ring').hidden = true; }); };
+  await park();
   await F(20);
 
   // ---- sow moss and mist it ----
-  await setRange('size', 0.06);
-  await stroke(line(680, 70, 1230, 150, 25, 1), 14);
-  await stroke(line(1230, 260, 980, 330, 15, 1), 8);
-  await stroke(line(40, 200, 120, 360), 8);
+  await setRange('size', 0.05);
+  await stroke(line(40, 110, 300, 150, 15, 1), 12);
+  await stroke(line(300, 250, 130, 330, 12, 1), 10);
+  await stroke(line(40, 420, 110, 470), 6);
   await tool('Mist');
-  await stroke(line(60, 120, 1240, 220, 50, 1.5), 16);
-  await page.mouse.move(640, 500);
+  await stroke(line(40, 160, 340, 330, 40, 1.5), 16);
+  await park();
   await F(6);
 
   // ---- years pass: the moss spreads ----
@@ -95,19 +95,21 @@ const url = process.env.DEMO_URL || 'http://localhost:4173/?capture&start=surpri
 
   // ---- scrape a path and a clearing ----
   await tool('Scrape');
-  await setRange('size', 0.045);
-  await stroke(line(1252, 70, 1010, 345, 38, 1), 30);
-  await stroke((u) => [800 + 46 * Math.cos(u * 12.6), 112 + 34 * Math.sin(u * 12.6)], 22);
+  await setRange('size', 0.035);
+  await stroke(line(35, 100, 270, 210, 14, 1), 30);
+  await stroke((u) => [190 + 24 * Math.cos(u * 12.6), 320 + 20 * Math.sin(u * 12.6)], 22);
+  await park();
   await F(5);
 
   // ---- set a rock in the clearing and stepping stones along the path ----
   await tab('Objects');
-  await place('Rock', 800, 112, { wheel: 1 });
-  await place('Flat stone', 1213, 112, { frames: 9 });
-  await place('Flat stone', 1150, 196, { frames: 9 });
-  await place('Flat stone', 1072, 278, { frames: 9 });
+  await place('Rock', 190, 320, { wheel: 1 });
+  await place('Flat stone', 75, 116, { frames: 9 });
+  await place('Flat stone', 150, 152, { frames: 9 });
+  await place('Flat stone', 226, 190, { frames: 9 });
   await page.keyboard.press('Escape');
-  await page.mouse.move(640, 520);
+  await tab('Moss');
+  await park();
   await F(6);
 
   // ---- more years: moss closes in around the new stones ----
